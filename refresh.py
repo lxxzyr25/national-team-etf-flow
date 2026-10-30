@@ -565,6 +565,26 @@ def main():
                 tot += s * w
         mv_total[ds] = round(tot / 1e8, 1)
     payload["mv_total"] = mv_total
+    # 每日累计持仓份额(全市场及分类口径, 亿份): 缺日沿用前一交易日已知份额
+    last_share_seen = {}
+    share_total = {}
+    cat_share_total = {}
+    for ds in dates_sorted:
+        total_shares = 0.0
+        cat_shares = {}
+        for c, _, _ in TARGETS:
+            pd = per_day.get(c, {})
+            if ds in pd:
+                last_share_seen[c] = pd[ds][0]
+            sv = last_share_seen.get(c)
+            if sv is not None:
+                total_shares += sv
+                cat = CAT_MAP.get(c, "其他")
+                cat_shares[cat] = cat_shares.get(cat, 0.0) + sv
+        share_total[ds] = round(total_shares / 1e8, 3)
+        cat_share_total[ds] = {k: round(v / 1e8, 3) for k, v in cat_shares.items()}
+    payload["share_total"] = share_total
+    payload["cat_share_total"] = cat_share_total
     return payload
 
 def escape_html(s):
@@ -605,6 +625,14 @@ def render_html(p):
             _kk = f"{_kk[:4]}-{_kk[4:6]}-{_kk[6:]}"
         _mvm[_kk] = _v
     y_mv = [_mvm.get(d, 0) for d in y_dates]
+    _share_src = p.get("share_total", {})
+    _share_map = {}
+    for _k, _v in _share_src.items():
+        _kk = str(_k)
+        if len(_kk) == 8:
+            _kk = f"{_kk[:4]}-{_kk[4:6]}-{_kk[6:]}"
+        _share_map[_kk] = _v
+    y_shares = [_share_map.get(d, 0) for d in y_dates]
     # 近一周 / 近一月 / 近半年 / 近一年 / 今年以来
     week_days = dates[-5:]
     month_days = dates[-21:]
@@ -641,14 +669,34 @@ def render_html(p):
     i_kl_series = [_zzkl] + [p.get("cat_kline", {}).get(cat) or [None] * len(dates) for cat in i_kl_names[1:]]
     _tot_series = [round(_tot_dt.get(d, 0), 3) for d in _dates_fmt]
     i_qd_series = [_tot_series] + [_cat_series(cat) for cat in i_kl_names[1:]]
+    _cat_share_src = p.get("cat_share_total", {}) or {}
+    _cat_share_dt = {}
+    for _ck, _cv in _cat_share_src.items():
+        _ckk = str(_ck)
+        if len(_ckk) == 8:
+            _ckk = f"{_ckk[:4]}-{_ckk[4:6]}-{_ckk[6:]}"
+        _cat_share_dt[_ckk] = _cv
+    _all_share_src = p.get("share_total", {}) or {}
+    _all_share_dt = {}
+    for _sk, _sv in _all_share_src.items():
+        _skk = str(_sk)
+        if len(_skk) == 8:
+            _skk = f"{_skk[:4]}-{_skk[4:6]}-{_skk[6:]}"
+        _all_share_dt[_skk] = _sv
+    def _cat_share_series(cat):
+        return [round((_cat_share_dt.get(d, {}) or {}).get(cat, 0), 3) for d in _dates_fmt]
+    _tot_share_series = [round(_all_share_dt.get(d, 0), 3) for d in _dates_fmt]
+    i_qs_series = [_tot_share_series] + [_cat_share_series(cat) for cat in i_kl_names[1:]]
     INAMES = json.dumps(i_kl_names, ensure_ascii=False)
     ISERIES = json.dumps(i_kl_series, ensure_ascii=False)
     ISERIES_Q = json.dumps(i_qd_series, ensure_ascii=False)
+    ISERIES_S = json.dumps(i_qs_series, ensure_ascii=False)
     D_ARR = json.dumps(dates, ensure_ascii=False)
     KLN_JS = ("<script>\n"
       "var IDX_NAMES=" + INAMES + ";\n"
       "var IDX_K=" + ISERIES + ";\n"
       "var IDX_Q=" + ISERIES_Q + ";\n"
+      "var IDX_S=" + ISERIES_S + ";\n"
       "var DATA_D=" + D_ARR + ";\n"
       "(function(){\n"
       "function go(){\n"
@@ -657,30 +705,33 @@ def render_html(p):
       " if(!window.echarts){var t=document.getElementById('klnTip');if(t)t.textContent='图表库未加载(需联网)';return;}\n"
       " var chart=echarts.init(box),cur=120,ci=0;\n"
       " function opt(n,ci2){\n"
-      "  var K=IDX_K[ci2],Q=IDX_Q[ci2];\n"
-      "  var s=(n>0)?Math.max(0,DATA_D.length-n):0,tail=(s>0)?{startValue:s,endValue:DATA_D.length-1} : null;\n"
-      "  var ds=DATA_D.slice(s),ks=K.slice(s),qs=Q.slice(s);\n"
-      "  return {axisPointer:{link:[{xAxisIndex:[0,1]}],lineStyle:{color:'#98a2b8'}},\n"
-      "   grid:[{left:50,right:56,top:16,height:300,gridIndex:0},{left:50,right:56,bottom:28,height:120,gridIndex:1}],\n"
+      "  var K=IDX_K[ci2],Q=IDX_Q[ci2],S=IDX_S[ci2];\n"
+      "  var s=(n>0)?Math.max(0,DATA_D.length-n):0;\n"
+      "  var ds=DATA_D.slice(s),ks=K.slice(s),qs=Q.slice(s),ss=S.slice(s);\n"
+      "  return {axisPointer:{link:[{xAxisIndex:[0,1,2]}],lineStyle:{color:'#98a2b8'}},\n"
+      "   grid:[{left:50,right:56,top:16,height:260,gridIndex:0},{left:50,right:56,top:292,height:105,gridIndex:1},{left:50,right:56,top:414,height:105,gridIndex:2}],\n"
       "   xAxis:[{type:'category',data:ds,gridIndex:0,boundaryGap:true,axisLine:{lineStyle:{color:'#c9cfdd'}},axisLabel:{color:'#7a8194',fontSize:10},axisTick:{show:false}},\n"
-      "          {type:'category',data:ds,gridIndex:1,axisLine:{lineStyle:{color:'#c9cfdd'}},axisLabel:{show:false},axisTick:{show:false}}],\n"
+      "          {type:'category',data:ds,gridIndex:1,axisLine:{lineStyle:{color:'#c9cfdd'}},axisLabel:{show:false},axisTick:{show:false}},\n"
+      "          {type:'category',data:ds,gridIndex:2,axisLine:{lineStyle:{color:'#c9cfdd'}},axisLabel:{color:'#7a8194',fontSize:9},axisTick:{show:false}}],\n"
       "   yAxis:[{scale:true,gridIndex:0,position:'right',splitLine:{lineStyle:{color:'#eef1f6'}},axisLabel:{color:'#7a8194',fontSize:10}},\n"
-      "          {scale:true,gridIndex:1,position:'right',splitLine:{show:false},axisLabel:{color:'#7a8194',fontSize:10,formatter:function(v){return v.toFixed(0);}}}],\n"
-      "   dataZoom:[{type:'inside',xAxisIndex:[0,1],zoomOnMouseWheel:true,moveOnMouseMove:true,moveOnMouseWheel:true,throttle:50},\n"
-      "             {type:'slider',xAxisIndex:[0,1],height:18,bottom:0,startValue:0,endValue:ds.length-1,brushSelect:false,textStyle:{fontSize:9,color:'#7a8194'},borderColor:'#dfe4ef',fillerColor:'rgba(99,126,188,0.12)',handleStyle:{color:'#b7c2da'},dataBackground:{lineStyle:{color:'#c9d2e4'},areaStyle:{color:'rgba(99,126,188,0.06)'}}}],\n"
+      "          {scale:true,gridIndex:1,position:'right',splitLine:{show:false},axisLabel:{color:'#7a8194',fontSize:10,formatter:function(v){return v.toFixed(0);}}},\n"
+      "          {scale:true,gridIndex:2,position:'right',splitLine:{show:false},axisLabel:{color:'#7a8194',fontSize:10,formatter:function(v){return v.toFixed(0);}}}],\n"
+      "   dataZoom:[{type:'inside',xAxisIndex:[0,1,2],zoomOnMouseWheel:true,moveOnMouseMove:true,moveOnMouseWheel:true,throttle:50},\n"
+      "             {type:'slider',xAxisIndex:[0,1,2],height:18,bottom:0,startValue:0,endValue:ds.length-1,brushSelect:false,textStyle:{fontSize:9,color:'#7a8194'},borderColor:'#dfe4ef',fillerColor:'rgba(99,126,188,0.12)',handleStyle:{color:'#b7c2da'},dataBackground:{lineStyle:{color:'#c9d2e4'},areaStyle:{color:'rgba(99,126,188,0.06)'}}}],\n"
       "   series:[\n"
       "    {name:'指数K线',type:'candlestick',data:ks.map(function(x){return x?[x.o,x.c,x.l,x.h]:[null,null,null,null];}),\n"
       "     itemStyle:{color:'#d43d2a',color0:'#1f9d7b',borderColor:'#d43d2a',borderColor0:'#1f9d7b'}},\n"
       "    {name:'该类ETF净买卖',type:'bar',xAxisIndex:1,yAxisIndex:1,data:qs,\n"
-      "     itemStyle:{color:function(p){return p.value>=0?'#d43d2a':'#1f9d7b';}}}\n"
+      "     itemStyle:{color:function(p){return p.value>=0?'#d43d2a':'#1f9d7b';}}},\n"
+      "    {name:'累计持仓份额',type:'line',xAxisIndex:2,yAxisIndex:2,data:ss,symbol:'none',smooth:false,lineStyle:{width:1.8,color:'#8b5cf6'},itemStyle:{color:'#8b5cf6'}}\n"
       "   ],\n"
       "   tooltip:{trigger:'axis',axisPointer:{type:'cross'},position:[8,338],confine:true,backgroundColor:'#2a2f3a',borderWidth:0,textStyle:{color:'#fff',fontSize:12},extraCssText:'white-space:nowrap;max-width:880px;padding:6px 10px;box-shadow:0 2px 8px rgba(0,0,0,.15);',\n"
-      "    formatter:function(ps){var i=ps[0].dataIndex,g=i+s,d=DATA_D[g],k=K[g]||{},q=Q[g];\n"
+      "    formatter:function(ps){var i=ps[0].dataIndex,g=i+s,d=DATA_D[g],k=K[g]||{},q=Q[g],sh=S[g];\n"
       "     var s1='';\n"
       "     if(k.o!=null){s1=' &nbsp;开'+k.o+' 高'+k.h+' 低'+k.l+' 收'+k.c;}\n"
       "     var col=q>=0?'#f0705c':'#46c7a6';\n"
       "     var lab=(ci2===0)?'当日净买卖':'该类ETF净买卖';\n"
-      "     return '<b>'+d+'</b>'+s1+' &nbsp;'+lab+' <b style=\"color:'+col+'\">'+(q>=0?'+':'')+q.toFixed(2)+' 亿</b>';}}\n"
+      "     return '<b>'+d+'</b>'+s1+' &nbsp;'+lab+' <b style=\"color:'+col+'\">'+(q>=0?'+':'')+q.toFixed(2)+' 亿</b> &nbsp;累计持仓份额 <b style=\"color:#b794f6\">'+sh.toFixed(2)+' 亿份</b>';}}\n"
       "  };\n"
       " }\n"
       " chart.setOption(opt(cur,ci));\n"
@@ -826,7 +877,7 @@ def render_html(p):
           <div class="bwrap"><div class="bar {cls(v)}" style="height:{max(h,1.5):.1f}%"></div></div>
           <div class="dt">{d[5:]}</div></div>"""
 
-    # 累计持仓金额折线(SVG)
+    # 累计持仓金额与累计持仓份额折线(SVG)
     W, H = 860, 120; pad = 12
     mn, mx = min(y_mv), max(y_mv)
     if mn == mx: mn -= 1; mx += 1
@@ -859,6 +910,24 @@ def render_html(p):
       "});"
       "CVD.addEventListener('mouseleave',function(){G.setAttribute('x1',-10);G.setAttribute('x2',-10);});"
       "\n</script>")
+    smn, smx = min(y_shares), max(y_shares)
+    if smn == smx: smn -= 1; smx += 1
+    spts = []
+    for i, v in enumerate(y_shares):
+        x = pad + i * (W - 2 * pad) / max(npts - 1, 1)
+        y = H - pad - (v - smn) / (smx - smn) * (H - 2 * pad)
+        spts.append(f"{x:.1f},{y:.1f}")
+    spoly = " ".join(spts)
+    slast_pts = spts[-1]; slast_v = y_shares[-1]
+    spt_json = json.dumps([{"d": y_dates[i], "v": round(y_shares[i], 3)} for i in range(len(y_dates))], ensure_ascii=False)
+    SHARE_JS_CODE = ("<script>\n"
+      "const YSPT=" + spt_json + ";\n"
+      "const SVD=document.getElementById('cumShareSvg'),STIP=document.getElementById('cumShareTip'),SG=document.getElementById('cumShareGuide');\n"
+      "const SN=YSPT.length;\n"
+      "function sxAt(i){return C0+i*(C1-C0)/(SN-1);}\n"
+      "SVD.addEventListener('mousemove',function(e){var r=SVD.getBoundingClientRect();var sx=(e.clientX-r.left)/r.width*WW;var i=Math.round((sx-C0)/(C1-C0)*(SN-1));if(i<0)i=0;if(i>=SN)i=SN-1;var p=YSPT[i],gx=sxAt(i);SG.setAttribute('x1',gx);SG.setAttribute('x2',gx);STIP.style.color='#8b5cf6';STIP.textContent='日期 '+p.d+'  累计持仓份额 '+p.v.toFixed(2)+' 亿份';});"
+      "SVD.addEventListener('mouseleave',function(){SG.setAttribute('x1',-10);SG.setAttribute('x2',-10);});\n"
+      "</script>")
 
     def fmt_dt(d):
         return f"{d[0:4]}-{d[5:7]}-{d[8:10]}"
@@ -971,10 +1040,21 @@ svg text{{fill:var(--mut);font-size:10px}}
         <text x="{W-pad}" y="{pad-4}" text-anchor="end">{mx:.0f}亿</text>
         <text x="{W-pad}" y="{H-6}" text-anchor="end">{last_v:,.0f}亿</text>
       </svg>
+      <h2 style="font-size:14px;margin-top:18px">累计持仓份额 · 最长 {len(y_dates)}个交易日（亿份 · 悬停查看当日）</h2>
+      <div id="cumShareTip" class="cumtip"></div>
+      <svg id="cumShareSvg" viewBox="0 0 {W} {H}" width="100%" height="{H}" preserveAspectRatio="none">
+        <line id="cumShareGuide" x1="-10" y1="{pad}" x2="-10" y2="{H-pad}" stroke="#c0c6d4" stroke-width="1" stroke-dasharray="3 3"/>
+        <polyline points="{spoly}" fill="none" stroke="#8b5cf6" stroke-width="1.5"/>
+        <circle cx="{slast_pts.split(',')[0]}" cy="{slast_pts.split(',')[1]}" r="3.5" fill="#8b5cf6"/>
+        <text x="{pad}" y="{pad-4}">{smn:.0f}</text>
+        <text x="{W-pad}" y="{pad-4}" text-anchor="end">{smx:.0f}亿份</text>
+        <text x="{W-pad}" y="{H-6}" text-anchor="end">{slast_v:,.2f}亿份</text>
+      </svg>
     </div></div>
     {JS_CODE}
+    {SHARE_JS_CODE}
   </div>
-  <div class="card"><h2>指数K线 × 每日净买入联动（上K线 下当日净买卖 · 悬停查看）</h2>
+  <div class="card"><h2>指数K线 × 每日净买入联动（上K线 下当日净买卖与累计份额 · 悬停查看）</h2>
     <div class="klnctl"><span class="kp">指数</span>
       <select id="klnCat" style="font-size:12px;padding:2px 6px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--fg)">{_cat_opts}</select>
       <span class="kp" style="margin-left:10px">显示范围</span>
@@ -983,8 +1063,8 @@ svg text{{fill:var(--mut);font-size:10px}}
       <button class="rng" data-n="250">250日</button>
       <button class="rng" data-n="0">全部</button>
       <span class="kpt" id="klnDate"></span></div>
-    <div id="klnBox" style="height:520px;width:100%"></div>
-    <div id="klnTip" class="ktip">默认显示中证全指K线与全市场国家队ETF每日净买入联动；下拉可切换至11类细分指数（沪深300、创业板等）K线 × 该类ETF净买入合计。上方为指数日K线，下方为当日净买入金额（亿元），鼠标悬停联动查看；红=净买入、绿=净卖出。</div>
+    <div id="klnBox" style="height:620px;width:100%"></div>
+    <div id="klnTip" class="ktip">默认显示中证全指K线、全市场ETF每日净买入和累计持仓份额；下拉可切换至11类细分指数。三个副图共用日期、悬停指针及缩放范围；红=净买入、绿=净卖出，紫线=累计持仓份额（亿份）。</div>
   </div>
   <div class="card"><h2>分品种汇总 · 近一周 / 近一月净买入卖出（亿元，按近一月降序）</h2>
     <div style="overflow-x:auto"><table>
