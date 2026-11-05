@@ -945,6 +945,8 @@ body{{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-
   background:var(--bg);color:var(--ink);line-height:1.55;}}
 .wrap{{max-width:980px;margin:0 auto;padding:20px 16px 60px;}}
 .top{{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px;margin-bottom:18px;}}
+.topnav{{font-size:13px;white-space:nowrap;}}
+.topnav a{{color:var(--accent);text-decoration:none;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);}}
 h1{{font-size:22px;margin:0;font-weight:700}}
 .sub{{color:var(--mut);font-size:12px;margin-top:6px;display:flex;gap:14px;flex-wrap:wrap}}
 .sub b{{font-weight:600;color:var(--accent)}}
@@ -1007,6 +1009,7 @@ svg text{{fill:var(--mut);font-size:10px}}
            style="cursor:pointer;margin-left:6px;padding:4px 12px;border:1px solid var(--line,#ccc);border-radius:6px;background:var(--card,#fff);color:var(--txt,#111);font-size:12px">🔄 刷新数据</button></div>
       <div style="color:var(--mut);font-size:12px;margin-top:6px">汇金 2025 年 12 月 31 日持仓约 1.5 万亿、总计 23 只。本数据无法准确检测汇金实际持仓，仅反映这 23 只 ETF 的每日净申购赎回情况。</div>
     </div>
+    <nav class="topnav"><a href="financing.html">融资余额分析 ↗</a></nav>
   </div>
   <div class="kpis">
     <div class="kpi"><div class="lb">最新交易日 {fmt_dt(dates[-1])} 合计</div>
@@ -1117,3 +1120,4 @@ if __name__ == "__main__":
     # ASCII 文件名副本, 供外部脚本(如 Windows 计划任务)在 ANSI 编码下安全引用
     shutil.copyfile(REPORT, os.path.join(OUT_DIR, "report_latest.html"))
     print("数据更新完成, 最新数据日:", p["data_asof"], "共", len(p["dates"]), "个交易日")
+

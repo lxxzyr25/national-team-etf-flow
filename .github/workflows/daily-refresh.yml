@@ -1,6 +1,8 @@
 name: 每日自动刷新国家队ETF报表
 
 on:
+  push:
+    branches: [main]
   schedule:
     # 每日固定刷新时刻(北京时间): 早盘加密 07:45~09:30 每15分钟一趟(覆盖"次日发布"), 下午 16:00, 晚间 23:00 兜底
     # 数据未推进时 refresh.py 会沿用旧时间戳使输出字节不变, 工作流跳过提交(不产生冗余提交); 数据滞后时脚本会等待重试抓取
@@ -22,6 +24,7 @@ permissions:
 
 jobs:
   refresh:
+    if: github.event_name != 'push' || github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,15 +41,23 @@ jobs:
       - name: 运行刷新脚本(拉份额/净值/K线, 计算净买卖, 生成报表)
         run: python refresh.py
 
-      - name: 将生成报表复制为 index.html 并提交(含份额缓存回写)
+      - name: 刷新沪深融资余额历史与独立图表页
+        run: python refresh_margin.py
+        continue-on-error: true
+
+      - name: 发布报表与融资余额缓存(含份额缓存回写)
         run: |
           cp "国家队ETF每日净买入卖出报表.html" index.html
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html _etf_shares_cache.json
+          if [ -f financing.html ] && [ -f _margin_cache.json ]; then
+            git add financing.html _margin_cache.json
+          fi
           if git diff --cached --quiet; then
             echo "报表无变化, 跳过提交"
           else
             git commit -m "chore: 每日自动刷新国家队ETF净买卖报表 ($(date +%F\ %T) 北京+8)"
             git push
           fi
+

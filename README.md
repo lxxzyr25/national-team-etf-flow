@@ -9,6 +9,7 @@
 - **中证全指 K 线 × 每日净买卖联动**（上 K 线下净买卖柱，悬停联动查看）
 - **同类指数归集汇总**（按指数加总，含最新份额与持仓市值）
 - **逐日净买卖明细**（最近 10 交易日矩阵）
+- **沪深融资余额分析**（独立页面 `financing.html`，与沪深300联动）
 
 ## 计算方法
 净买入/净卖出 = (当日基金份额 − 上一交易日基金份额) × 当日单位净值（亿元）
@@ -16,13 +17,20 @@
 - 数据来源：上交所/深交所每日 ETF 份额 + 基金单位净值；中证全指 K 线来自行情接口
 
 ## 每日自动更新
-- **GitHub Actions**：`.github/workflows/daily-refresh.yml` 每个工作日 20:00（北京时间）自动运行
-  `refresh.py` 抓取数据、重算并提交最新 `index.html`。也可在 Actions 页手动 "Run workflow"。
+- **GitHub Actions**：`.github/workflows/daily-refresh.yml` 每天按多个时点运行
+  `refresh.py` 抓取 ETF 数据，`refresh_margin.py` 更新融资余额数据；生成 `index.html` 与 `financing.html`，并提交两份历史缓存。也可在 Actions 页手动 "Run workflow"。
 - **本地**：`python refresh.py` 一键刷新（约需几分钟）。
 
 ## 发布为网页
 1. 本仓库在 GitHub 开启 **Settings → Pages**，Sources 选 `Deploy from a branch` → 分支 `main` 根目录。
 2. 访问 `https://<你的用户名>.github.io/<仓库名>/` 即得在线报表。
+3. 融资余额模块位于 `https://<你的用户名>.github.io/<仓库名>/financing.html`。
+
+## 融资余额口径
+- 沪深融资余额和融资买入额通过 AKShare 调用金十数据中心的公开历史汇总接口（整理交易所公开数据），按两市均有数据的日期合并，历史记录存于 `_margin_cache.json`。
+- 页面展示的是融资余额，不是包含融券的融资融券总余额。历史接口未稳定提供融资偿还额，因此“余额变化估算”是合计融资余额的日差，不应视作精确融资净买入额。
+- 页面指数联动使用沪深300日收盘价并归一化为起点 100。指标为日频历史数据，存在交易所发布延迟。
 
 ## 免责声明
 本报表仅用于数据观察与学习，不构成任何投资建议。净买卖为份额口径的估算，非盘中实时流量。
+
