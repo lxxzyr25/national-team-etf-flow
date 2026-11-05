@@ -99,8 +99,9 @@ def fetch_index(dates):
 def _float_cap_from_exchange_frames(sh, sz):
     """Return total A-share float market cap in yuan from exchange summaries."""
     sh_value = 0.0
-    for category in ("主板", "科创板"):
-        row = sh.loc[sh["项目"].astype(str).str.strip() == "流通市值"]
+    sh_label = "单日情况" if "单日情况" in sh.columns else "项目"
+    for category in ("主板A", "科创板"):
+        row = sh.loc[sh[sh_label].astype(str).str.strip() == "流通市值"]
         if row.empty or category not in row.columns:
             raise ValueError(f"SSE summary missing {category} float market cap")
         sh_value += float(pd.to_numeric(row.iloc[0][category], errors="raise")) * 1e8
