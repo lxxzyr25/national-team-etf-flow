@@ -54,6 +54,9 @@ jobs:
           if [ -f financing.html ] && [ -f _margin_cache.json ]; then
             git add financing.html _margin_cache.json
           fi
+          if [ -f _float_mcap_cache.json ]; then
+            git add _float_mcap_cache.json
+          fi
           if git diff --cached --quiet; then
             echo "报表无变化, 跳过提交"
           else
