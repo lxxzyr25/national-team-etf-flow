@@ -18,6 +18,12 @@ on:
     - cron: "0 8 * * *"      # 16:00 北京 每天
     - cron: "0 15 * * *"     # 23:00 北京 每天
   workflow_dispatch:
+    inputs:
+      rebuild_official_margin:
+        description: 从交易所接口分批重建两融历史并重抓流通市值
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: write
@@ -42,6 +48,14 @@ jobs:
         run: python refresh.py
 
       - name: 刷新沪深融资余额历史与独立图表页
+        id: margin_rebuild
+        if: github.event_name == 'workflow_dispatch' && inputs.rebuild_official_margin == true
+        run: python refresh_margin.py --rebuild
+        continue-on-error: true
+
+      - name: 增量刷新沪深融资余额历史与独立图表页
+        id: margin_refresh
+        if: github.event_name != 'workflow_dispatch' || inputs.rebuild_official_margin != true
         run: python refresh_margin.py
         continue-on-error: true
 
@@ -57,10 +71,18 @@ jobs:
           if [ -f _float_mcap_cache.json ]; then
             git add _float_mcap_cache.json
           fi
+          if [ -f _margin_official_backfill.json ] || git ls-files --error-unmatch _margin_official_backfill.json >/dev/null 2>&1; then
+            git add -A -- _margin_official_backfill.json
+          fi
           if git diff --cached --quiet; then
             echo "报表无变化, 跳过提交"
           else
             git commit -m "chore: 每日自动刷新国家队ETF净买卖报表 ($(date +%F\ %T) 北京+8)"
             git push
           fi
+
+      - name: 将融资数据抓取失败标记为工作流失败
+        if: steps.margin_rebuild.outcome == 'failure' || steps.margin_refresh.outcome == 'failure'
+        run: exit 1
+
 
